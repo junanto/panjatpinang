@@ -1,0 +1,13 @@
+{
+  "name": "panjat-pinang-realtime",
+  "version": "1.0.0",
+  "description": "Game Edukasi Panjat Pinang Real-Time Online berbasis Web",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
