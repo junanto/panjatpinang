@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panjat Pinang Real-Time Online</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; }
+        body { background-color: #e0f7fa; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+        h1 { color: #00695c; margin-bottom: 15px; text-align: center; }
+
+        .setup-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .input-group { margin-bottom: 15px; text-align: left; }
+        .input-group label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
+        .input-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; }
+        .btn-start { width: 100%; padding: 12px; background: #00796b; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        .btn-start:hover { background: #004d40; }
+
+        .game-container { display: none; flex-direction: row; gap: 30px; background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.15); max-width: 900px; width: 100%; }
+
+        .arena { display: flex; justify-content: space-around; width: 320px; height: 420px; background: linear-gradient(to bottom, #81d4fa 70%, #81c784 70%); border: 3px solid #004d40; border-radius: 8px; position: relative; }
+        .pole-container { position: relative; width: 100px; height: 100%; display: flex; flex-direction: column; align-items: center; }
+        .pole { width: 24px; height: 320px; background: #8d6e63; border: 2px solid #4e342e; position: absolute; bottom: 20px; border-radius: 4px; }
+        .prize { position: absolute; top: 25px; font-size: 28px; z-index: 2; }
+
+        .player { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; position: absolute; bottom: 20px; transition: bottom 0.4s ease-in-out; z-index: 3; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-size: 11px; text-align: center; word-break: break-all; padding: 2px; }
+        #player1 { background-color: #e53935; left: 6px; }
+        #player2 { background-color: #1e88e5; right: 6px; }
+
+        .quiz-panel { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+        .status-bar { padding: 10px; font-weight: bold; text-align: center; border-radius: 6px; background: #00897b; color: white; margin-bottom: 15px; }
+        .question-box { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 20px; min-height: 60px; }
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-option { padding: 12px; font-size: 14px; border: 2px solid #ccc; background-color: #f9f9f9; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+        .btn-option:hover:not(:disabled) { background-color: #e0e0e0; }
+        .btn-option:disabled { cursor: not-allowed; opacity: 0.6; }
+        .feedback { margin-top: 15px; font-weight: bold; text-align: center; min-height: 24px; }
+
+        @media (max-width: 650px) {
+            .game-container { flex-direction: column; align-items: center; }
+            .arena { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Panjat Pinang Real-Time Online</h1>
+
+    <!-- Form Join Room -->
+    <div id="setup-panel" class="setup-card">
+        <div class="input-group">
+            <label>Nama Pemain</label>
+            <input type="text" id="player-name" placeholder="Masukkan nama kamu..." value="Pemain">
+        </div>
+        <div class="input-group">
+            <label>Kode Room / Kamar</label>
+            <input type="text" id="room-id" placeholder="Contoh: room123" value="pinang1">
+        </div>
+        <button class="btn-start" onclick="joinGame()">Masuk Game</button>
+    </div>
+
+    <!-- Arena Game -->
+    <div id="game-panel" class="game-container">
+        <div class="arena">
+            <div class="pole-container">
+                <div class="prize">🎁🚲</div>
+                <div class="pole"></div>
+                <div id="player1" class="player">P1</div>
+            </div>
+            <div class="pole-container">
+                <div class="prize">🎁🏆</div>
+                <div class="pole"></div>
+                <div id="player2" class="player">P2</div>
+            </div>
+        </div>
+
+        <div class="quiz-panel">
+            <div>
+                <div id="status-bar" class="status-bar">Menunggu Pemain Lain...</div>
+                <div id="question-box" class="question-box">Menunggu permainan dimulai...</div>
+                <div id="options-grid" class="options-grid"></div>
+            </div>
+            <div>
+                <div id="feedback" class="feedback"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        
+        let mySlot = null;
+        let myRoomId = '';
+        let quizData = [];
+        let currentQuestionIndex = 0;
+        let gameActive = false;
+
+        const stepHeights = [20, 80, 140, 200, 260, 320];
+
+        const setupPanel = document.getElementById('setup-panel');
+        const gamePanel = document.getElementById('game-panel');
+        const statusBar = document.getElementById('status-bar');
+        const questionBox = document.getElementById('question-box');
+        const optionsGrid = document.getElementById('options-grid');
+        const feedback = document.getElementById('feedback');
+        const p1Element = document.getElementById('player1');
+        const p2Element = document.getElementById('player2');
+
+        function joinGame() {
+            const name = document.getElementById('player-name').value.trim() || 'Pemain';
+            myRoomId = document.getElementById('room-id').value.trim() || 'pinang1';
+
+            socket.emit('joinRoom', { roomId: myRoomId, playerName: name });
+
+            setupPanel.style.display = 'none';
+            gamePanel.style.display = 'flex';
+        }
+
+        socket.on('playerAssigned', (data) => {
+            mySlot = data.slot;
+            quizData = data.quizData;
+            statusBar.textContent = `Kamu adalah Pemain ${mySlot} (${data.name}). Menunggu lawan...`;
+        });
+
+        socket.on('roomState', (data) => {
+            data.players.forEach(p => {
+                if (p.slot === 1) p1Element.textContent = p.name;
+                if (p.slot === 2) p2Element.textContent = p.name;
+            });
+        });
+
+        socket.on('startGame', (data) => {
+            statusBar.textContent = "⚡ PERMAINAN DIMULAI! ADU CEPAT PANJAT!";
+            statusBar.style.background = "#2e7d32";
+            gameActive = true;
+            currentQuestionIndex = 0;
+            showQuestion();
+        });
+
+        socket.on('updatePosition', (data) => {
+            data.players.forEach(p => {
+                const targetPos = stepHeights[p.step] + 'px';
+                if (p.slot === 1) p1Element.style.bottom = targetPos;
+                if (p.slot === 2) p2Element.style.bottom = targetPos;
+            });
+        });
+
+        socket.on('gameOver', (data) => {
+            gameActive = false;
+            optionsGrid.innerHTML = "";
+            
+            if (data.winnerSlot === mySlot) {
+                feedback.textContent = "🏆 SELAMAT! Kamu berhasil mencapai puncak pertama kali!";
+                feedback.style.color = "#2e7d32";
+            } else {
+                feedback.textContent = `❌ ${data.winnerName} (Pemain ${data.winnerSlot}) menang lebih dulu!`;
+                feedback.style.color = "#c62828";
+            }
+
+            questionBox.textContent = "Permainan Selesai!";
+        });
+
+        socket.on('playerLeft', (data) => {
+            gameActive = false;
+            statusBar.textContent = "Pemain lain terputus. Permainan dihentikan.";
+            statusBar.style.background = "#c62828";
+        });
+
+        socket.on('roomFull', (msg) => {
+            alert(msg);
+            location.reload();
+        });
+
+        function showQuestion() {
+            if (!gameActive) return;
+            feedback.textContent = "";
+
+            if (currentQuestionIndex >= quizData.length) {
+                currentQuestionIndex = 0;
+            }
+
+            const q = quizData[currentQuestionIndex];
+            questionBox.textContent = q.question;
+            optionsGrid.innerHTML = "";
+
+            q.options.forEach((opt, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'btn-option';
+                btn.textContent = opt;
+                btn.onclick = () => checkAnswer(index);
+                optionsGrid.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selectedIndex) {
+            if (!gameActive) return;
+
+            const q = quizData[currentQuestionIndex];
+            const isCorrect = selectedIndex === q.answer;
+
+            if (isCorrect) {
+                feedback.textContent = "Jawaban Benar! +1 Step 🚀";
+                feedback.style.color = "#2e7d32";
+                socket.emit('correctAnswer', { roomId: myRoomId });
+            } else {
+                feedback.textContent = "Jawaban Salah! Merosot -1 Step 💥";
+                feedback.style.color = "#c62828";
+                socket.emit('wrongAnswer', { roomId: myRoomId });
+            }
+
+            currentQuestionIndex++;
+            setTimeout(showQuestion, 800);
+        }
+    </script>
+</body>
+</html>
